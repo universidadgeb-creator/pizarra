@@ -11,8 +11,16 @@ create table if not exists public.ideas1pct (
   status text,
   evidencia boolean default false,
   aprendizaje text,
-  equipo text
+  equipo text,
+  "fechaSeguimiento" date,
+  "semanaOriginal" integer
 );
+
+-- Si la tabla ya existía sin estas dos columnas (por ejemplo, si ya
+-- habías corrido una versión anterior de este script), esto las agrega
+-- sin borrar nada de lo que ya tengas cargado:
+alter table public.ideas1pct add column if not exists "fechaSeguimiento" date;
+alter table public.ideas1pct add column if not exists "semanaOriginal" integer;
 
 -- Row Level Security: reglas simples de "cualquiera con el link puede
 -- leer y escribir", igual que el comportamiento que tenías dentro de
