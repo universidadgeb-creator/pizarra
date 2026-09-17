@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Pin, LayoutDashboard, ClipboardList, Users, Plus, Trash2, CheckCircle2,
-  Circle, ChevronDown, Save, AlertCircle, X, BookMarked, TrendingUp, TrendingDown, Minus
+  Circle, ChevronDown, Save, AlertCircle, X, BookMarked, TrendingUp, TrendingDown, Minus,
+  Calendar
 } from "lucide-react";
 import { supabase } from "./supabase";
 import SEED_DATA from "./seedData.json";
@@ -23,6 +24,10 @@ const PROCESOS_PRIORITARIOS = [
   "Atracción y Selección de Talento", "Onboarding", "Política de apariencia",
   "Empoderamientos", "Eje 1: Inducción", "Eje 2: Servicio al cliente"
 ];
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const META_MENSUAL_POR_PROCESO = 4;
+const INICIO_ACUMULADO = "2026-02";
+const INICIO_ACUMULADO_IH = "2026-04"; // Iniciativas Humanas arranca su acumulado hasta abril
 
 /* ---------- helpers ---------- */
 function weekNumber(dateStr) {
@@ -44,6 +49,23 @@ function uid() {
 }
 function pct(n) {
   return Math.round(n * 100) + "%";
+}
+function monthKey(dateStr) {
+  return dateStr ? dateStr.slice(0, 7) : null;
+}
+function formatMonthLabel(key) {
+  if (!key) return "—";
+  const [y, m] = key.split("-").map(Number);
+  const nombre = MESES[m - 1] || "";
+  return `${nombre.charAt(0).toUpperCase()}${nombre.slice(1)} ${y}`;
+}
+function inicioAcumuladoProceso(proceso) {
+  return proceso === "Iniciativas Humanas" ? INICIO_ACUMULADO_IH : INICIO_ACUMULADO;
+}
+function monthDiffCount(startKey, endKey) {
+  const [sy, sm] = startKey.split("-").map(Number);
+  const [ey, em] = endKey.split("-").map(Number);
+  return (ey - sy) * 12 + (em - sm) + 1;
 }
 
 /* ---------- Supabase data layer ---------- */
@@ -202,11 +224,12 @@ export default function App() {
   return (
     <div style={{ background: C.bgApp, minHeight: 480, fontFamily: sans, color: C.ink }}>
       <Header tab={tab} setTab={setTab} saveState={saveState} />
-      <div style={{ maxWidth: tab === "dashboard" ? 1080 : 760, margin: "0 auto", padding: "28px 20px 56px" }}>
+      <div style={{ maxWidth: tab === "dashboard" || tab === "mensual" ? 1080 : 760, margin: "0 auto", padding: "28px 20px 56px" }}>
         {tab === "form" && (
           <FormView onSubmit={addIdeas} defaultColaborador={activeColaborador} onColaborador={setActiveColaborador} />
         )}
         {tab === "dashboard" && <DashboardView ideas={ideas} />}
+        {tab === "mensual" && <MonthlyView ideas={ideas} />}
         {tab === "colaborador" && (
           <ColaboradorView
             ideas={ideas}
@@ -226,6 +249,7 @@ function Header({ tab, setTab, saveState }) {
   const tabs = [
     { id: "form", label: "Registrar ideas", icon: Plus },
     { id: "dashboard", label: "Pizarra general", icon: LayoutDashboard },
+    { id: "mensual", label: "Vista mensual", icon: Calendar },
     { id: "colaborador", label: "Panel colaborador", icon: Users },
   ];
   return (
@@ -861,6 +885,167 @@ function KpiCard({ label, value, onClick, active }) {
       <div style={{ fontSize: 12.5, color: C.inkSoft, marginBottom: 6 }}>{label}</div>
       <div style={{ fontFamily: serif, fontSize: 28, fontWeight: 600 }}>{value}</div>
     </div>
+  );
+}
+
+/* ================= MONTHLY VIEW (presentación) ================= */
+function MonthlyView({ ideas }) {
+  const curMonthKey = monthKey(todayStr());
+  const [mes, setMes] = useState(curMonthKey);
+  const [proceso, setProceso] = useState(PROCESOS_PRIORITARIOS[0]);
+
+  const withMonth = useMemo(() => ideas.map((i) => ({ ...i, _mes: monthKey(i.fechaInicio) })), [ideas]);
+
+  const monthOptions = useMemo(() => {
+    const opts = [];
+    let [y, m] = curMonthKey.split("-").map(Number);
+    while (y > 2026 || (y === 2026 && m >= 2)) {
+      opts.push(`${y}-${String(m).padStart(2, "0")}`);
+      m--;
+      if (m === 0) { m = 12; y--; }
+    }
+    return opts;
+  }, [curMonthKey]);
+
+  const ideasDelMes = useMemo(
+    () => withMonth.filter((i) => i.proceso === proceso && i._mes === mes).sort((a, b) => (b.fechaInicio || "").localeCompare(a.fechaInicio || "")),
+    [withMonth, proceso, mes]
+  );
+  const total = ideasDelMes.length;
+  const terminadas = ideasDelMes.filter((i) => i.status === "Terminado").length;
+  const pendientes = total - terminadas;
+
+  const inicioAcum = inicioAcumuladoProceso(proceso);
+  const mesesTranscurridos = monthDiffCount(inicioAcum, mes);
+  const aplicaAcumulado = mesesTranscurridos > 0;
+  const ideasAcumuladas = aplicaAcumulado
+    ? withMonth.filter((i) => i.proceso === proceso && i._mes && i._mes >= inicioAcum && i._mes <= mes).length
+    : 0;
+  const terminadasAcumuladas = aplicaAcumulado
+    ? withMonth.filter((i) => i.proceso === proceso && i._mes && i._mes >= inicioAcum && i._mes <= mes && i.status === "Terminado").length
+    : 0;
+  const metaAcumulada = aplicaAcumulado ? META_MENSUAL_POR_PROCESO * mesesTranscurridos : 0;
+
+  return (
+    <div>
+      <SectionTitle title="Vista mensual" />
+
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 22 }}>
+        <div>
+          <label style={{ fontSize: 12.5, color: C.inkSoft, display: "block", marginBottom: 6 }}>Mes</label>
+          <select value={mes} onChange={(e) => setMes(e.target.value)} style={{ ...selectStyle, width: "auto", fontWeight: 600 }}>
+            {monthOptions.map((k) => (
+              <option key={k} value={k}>{formatMonthLabel(k)}{k === curMonthKey ? " (actual)" : ""}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label style={{ fontSize: 12.5, color: C.inkSoft, display: "block", marginBottom: 6 }}>Proceso</label>
+          <select value={proceso} onChange={(e) => setProceso(e.target.value)} style={{ ...selectStyle, width: "auto", fontWeight: 600 }}>
+            {PROCESOS.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div style={{ ...cardStyle, padding: "32px 28px", marginBottom: 22 }}>
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 12.5, color: C.amber, fontWeight: 600, marginBottom: 3 }}>{formatMonthLabel(mes)}</div>
+          <h2 style={{ fontFamily: serif, fontSize: 26, fontWeight: 600, margin: 0 }}>{proceso}</h2>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28, alignItems: "center" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+            <MonthlyKpi label="Ideas del mes" value={total} />
+            <MonthlyKpi label="Terminadas" value={terminadas} color={C.green} />
+            <MonthlyKpi label="Pendientes" value={pendientes} color={C.blue} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+            <ComplianceDonut value={total} max={META_MENSUAL_POR_PROCESO} color={C.green} />
+            <div style={{ fontSize: 12.5, color: C.inkSoft, textAlign: "center" }}>
+              Cumplimiento del mes<br />
+              <strong style={{ color: C.ink }}>{total} de {META_MENSUAL_POR_PROCESO}</strong> ideas esperadas
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <SectionTitle title={`Acumulado desde ${formatMonthLabel(inicioAcum)}`} small />
+      {!aplicaAcumulado ? (
+        <div style={cardStyle}>
+          <p style={{ color: C.inkSoft, fontSize: 14, margin: 0 }}>
+            El acumulado de <strong>{proceso}</strong> arranca en {formatMonthLabel(inicioAcum)}; el mes seleccionado es anterior a esa fecha.
+          </p>
+        </div>
+      ) : (
+        <div style={{ ...cardStyle, padding: "24px 28px", marginBottom: 22 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28, alignItems: "center" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+              <MonthlyKpi label="Ideas acumuladas" value={ideasAcumuladas} />
+              <MonthlyKpi label="Terminadas" value={terminadasAcumuladas} color={C.green} />
+              <MonthlyKpi label="Meta acumulada" value={metaAcumulada} />
+              <MonthlyKpi label="Meses contados" value={mesesTranscurridos} />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+              <ComplianceDonut value={ideasAcumuladas} max={metaAcumulada} color={C.amber} />
+              <div style={{ fontSize: 12.5, color: C.inkSoft, textAlign: "center" }}>
+                Cumplimiento acumulado<br />
+                <strong style={{ color: C.ink }}>{ideasAcumuladas} de {metaAcumulada}</strong> ideas esperadas
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <SectionTitle title={`Ideas de ${proceso} · ${formatMonthLabel(mes)}`} small />
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {ideasDelMes.length === 0 && (
+          <div style={cardStyle}>
+            <p style={{ color: C.inkSoft, fontSize: 14, margin: 0 }}>No hay ideas registradas de este proceso en {formatMonthLabel(mes)}.</p>
+          </div>
+        )}
+        {ideasDelMes.map((it) => (
+          <div key={it.id} style={{ ...cardStyle, padding: "12px 16px", display: "flex", gap: 10, alignItems: "flex-start" }}>
+            <StatusDot status={it.status} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, color: C.inkSoft, marginBottom: 2 }}>
+                <strong style={{ color: C.ink }}>{it.colaborador}</strong> · {fmtDateHuman(it.fechaInicio)}
+              </div>
+              <div style={{ fontSize: 14 }}>{it.propuesta}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MonthlyKpi({ label, value, color }) {
+  return (
+    <div style={{ ...cardStyle, padding: "12px 14px" }}>
+      <div style={{ fontSize: 11.5, color: C.inkSoft, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 600, color: color || C.ink }}>{value}</div>
+    </div>
+  );
+}
+
+function ComplianceDonut({ value, max, size = 128, color }) {
+  const ratio = max > 0 ? Math.min(value / max, 1) : 0;
+  const r = size / 2 - 11;
+  const circumference = 2 * Math.PI * r;
+  const dash = circumference * ratio;
+  const label = max > 0 ? pct(value / max) : "—";
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={C.line} strokeWidth={11} />
+      <circle
+        cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={11}
+        strokeDasharray={`${dash} ${circumference - dash}`} strokeLinecap="round"
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+      />
+      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" style={{ fontFamily: serif, fontSize: size * 0.22, fontWeight: 700, fill: C.ink }}>
+        {label}
+      </text>
+    </svg>
   );
 }
 
