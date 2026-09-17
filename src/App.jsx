@@ -955,16 +955,12 @@ function MonthlyView({ ideas }) {
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28, alignItems: "center" }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-            <MonthlyKpi label="Ideas del mes" value={total} />
+            <MonthlyKpi label="Ideas del mes" value={`${total}/${META_MENSUAL_POR_PROCESO}`} />
             <MonthlyKpi label="Terminadas" value={terminadas} color={C.green} />
             <MonthlyKpi label="Pendientes" value={pendientes} color={C.blue} />
           </div>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "center" }}>
             <ComplianceDonut value={total} max={META_MENSUAL_POR_PROCESO} color={C.green} />
-            <div style={{ fontSize: 12.5, color: C.inkSoft, textAlign: "center" }}>
-              Cumplimiento del mes<br />
-              <strong style={{ color: C.ink }}>{total} de {META_MENSUAL_POR_PROCESO}</strong> ideas esperadas
-            </div>
           </div>
         </div>
       </div>
@@ -979,18 +975,13 @@ function MonthlyView({ ideas }) {
       ) : (
         <div style={{ ...cardStyle, padding: "24px 28px", marginBottom: 22 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28, alignItems: "center" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
-              <MonthlyKpi label="Ideas acumuladas" value={ideasAcumuladas} />
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+              <MonthlyKpi label="Ideas acumuladas" value={`${ideasAcumuladas}/${metaAcumulada}`} />
               <MonthlyKpi label="Terminadas" value={terminadasAcumuladas} color={C.green} />
-              <MonthlyKpi label="Meta acumulada" value={metaAcumulada} />
-              <MonthlyKpi label="Meses contados" value={mesesTranscurridos} />
+              <MonthlyKpi label="Pendientes" value={ideasAcumuladas - terminadasAcumuladas} color={C.blue} />
             </div>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", justifyContent: "center" }}>
               <ComplianceDonut value={ideasAcumuladas} max={metaAcumulada} color={C.amber} />
-              <div style={{ fontSize: 12.5, color: C.inkSoft, textAlign: "center" }}>
-                Cumplimiento acumulado<br />
-                <strong style={{ color: C.ink }}>{ideasAcumuladas} de {metaAcumulada}</strong> ideas esperadas
-              </div>
             </div>
           </div>
         </div>
