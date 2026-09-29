@@ -224,7 +224,7 @@ export default function App() {
   return (
     <div style={{ background: C.bgApp, minHeight: 480, fontFamily: sans, color: C.ink }}>
       <Header tab={tab} setTab={setTab} saveState={saveState} />
-      <div style={{ maxWidth: tab === "dashboard" || tab === "mensual" ? 1080 : 760, margin: "0 auto", padding: "28px 20px 56px" }}>
+      <div style={{ maxWidth: tab === "dashboard" || tab === "mensual" || tab === "colaborador" ? 1080 : 760, margin: "0 auto", padding: "28px 20px 56px" }}>
         {tab === "form" && (
           <FormView onSubmit={addIdeas} defaultColaborador={activeColaborador} onColaborador={setActiveColaborador} />
         )}
@@ -250,7 +250,7 @@ function Header({ tab, setTab, saveState }) {
     { id: "form", label: "Registrar ideas", icon: Plus },
     { id: "dashboard", label: "Pizarra general", icon: LayoutDashboard },
     { id: "mensual", label: "Vista mensual", icon: Calendar },
-    { id: "colaborador", label: "Panel colaborador", icon: Users },
+    { id: "colaborador", label: "Vista colaborador", icon: Users },
   ];
   return (
     <div style={{ background: C.bgHeader, color: "#F6F1E4" }}>
@@ -660,25 +660,22 @@ function DashboardView({ ideas }) {
     return map;
   }, [scopedIdeas]);
 
-  const porColaborador = useMemo(() => {
-    const map = {};
-    scopedIdeas.forEach((i) => {
-      if (!i.colaborador) return;
-      if (!map[i.colaborador]) map[i.colaborador] = { total: 0, terminadas: 0, enProceso: 0 };
-      map[i.colaborador].total++;
-      if (i.status === "Terminado") map[i.colaborador].terminadas++;
-      else map[i.colaborador].enProceso++;
-    });
-    return Object.entries(map)
-      .map(([nombre, v]) => ({ nombre, ...v }))
-      .sort((a, b) => b.total - a.total);
-  }, [scopedIdeas]);
-
   const todosLosProcesos = useMemo(() => {
     const known = new Set(PROCESOS);
     Object.keys(porProceso).forEach((p) => known.add(p));
     return Array.from(known);
   }, [porProceso]);
+
+  const acumuladoPorProceso = useMemo(() => {
+    const map = {};
+    ideas.forEach((i) => {
+      const key = i.proceso || "Sin proceso";
+      map[key] = (map[key] || 0) + 1;
+    });
+    return Object.entries(map)
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [ideas]);
 
   return (
     <div>
@@ -737,33 +734,8 @@ function DashboardView({ ideas }) {
 
       <div style={{ height: 26 }} />
 
-      <SectionTitle title={`Totales por colaborador (${scopeLabel})`} small />
-      <div style={{ ...cardStyle, padding: 0, overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
-          <thead>
-            <tr style={{ background: C.amberSoft }}>
-              {["Colaborador", "Total", "En proceso", "%", "Terminado", "%"].map((h) => (
-                <th key={h} style={thStyle}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {porColaborador.length === 0 && (
-              <tr><td style={tdStyle} colSpan={6}><span style={{ color: C.inkSoft }}>Sin ideas en este periodo.</span></td></tr>
-            )}
-            {porColaborador.map((row, idx) => (
-              <tr key={row.nombre} style={{ borderTop: idx === 0 ? "none" : `1px solid ${C.line}` }}>
-                <td style={tdStyle}><strong>{row.nombre}</strong></td>
-                <td style={tdStyle}>{row.total}</td>
-                <td style={tdStyle}>{row.enProceso}</td>
-                <td style={tdStyle}>{row.total ? pct(row.enProceso / row.total) : "—"}</td>
-                <td style={tdStyle}>{row.terminadas}</td>
-                <td style={tdStyle}>{row.total ? pct(row.terminadas / row.total) : "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <SectionTitle title="Acumulado de ideas por proceso" small />
+      <BarChart data={acumuladoPorProceso} color={C.green} />
     </div>
   );
 }
@@ -866,6 +838,29 @@ function ProcesoTable({ procesos, data, meta, showMeta }) {
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function BarChart({ data, color = C.green }) {
+  const max = Math.max(1, ...data.map((d) => d.value));
+  return (
+    <div style={{ ...cardStyle, display: "flex", flexDirection: "column", gap: 12 }}>
+      {data.length === 0 && <p style={{ color: C.inkSoft, fontSize: 13, margin: 0 }}>Sin datos.</p>}
+      {data.map((d) => (
+        <div key={d.label} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{
+            width: 170, flexShrink: 0, fontSize: 12.5, color: C.inkSoft, textAlign: "right",
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          }}>
+            {d.label}
+          </div>
+          <div style={{ flex: 1, background: C.line, borderRadius: 6, height: 16, overflow: "hidden" }}>
+            <div style={{ width: `${(d.value / max) * 100}%`, background: color, height: "100%", borderRadius: 6 }} />
+          </div>
+          <div style={{ width: 30, flexShrink: 0, fontSize: 12.5, fontWeight: 700, color: C.ink }}>{d.value}</div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1045,6 +1040,9 @@ function ColaboradorView({ ideas, activeColaborador, setActiveColaborador, onUpd
   const curWeek = weekNumber(todayStr());
   const [filter, setFilter] = useState("todas"); // todas | pendientes | terminadas | bitacora
   const [weekFilter, setWeekFilter] = useState(String(curWeek)); // default: semana actual
+  const [verLista, setVerLista] = useState(false);
+
+  useEffect(() => { setVerLista(false); }, [activeColaborador, weekFilter, filter]);
 
   const weekOptions = useMemo(() => {
     const opts = [];
@@ -1052,16 +1050,25 @@ function ColaboradorView({ ideas, activeColaborador, setActiveColaborador, onUpd
     return opts;
   }, [curWeek]);
 
+  const TODOS = "__todos__";
+
   const nombres = useMemo(() => {
     const set = new Set(LIDERES);
     ideas.forEach((i) => i.colaborador && set.add(i.colaborador));
     return Array.from(set).sort();
   }, [ideas]);
 
+  const esTodos = activeColaborador === TODOS;
+
   const mias = useMemo(
-    () => ideas.filter((i) => i.colaborador === activeColaborador).sort((a, b) => (b.fechaInicio || "").localeCompare(a.fechaInicio || "")),
-    [ideas, activeColaborador]
+    () =>
+      (esTodos ? ideas : ideas.filter((i) => i.colaborador === activeColaborador))
+        .slice()
+        .sort((a, b) => (b.fechaInicio || "").localeCompare(a.fechaInicio || "")),
+    [ideas, activeColaborador, esTodos]
   );
+
+  const withWeek = useMemo(() => ideas.map((i) => ({ ...i, _week: weekNumber(i.fechaInicio) })), [ideas]);
 
   const miasEnSemana = useMemo(() => {
     if (weekFilter === "acumulado") return mias;
@@ -1085,9 +1092,42 @@ function ColaboradorView({ ideas, activeColaborador, setActiveColaborador, onUpd
     setFilter((cur) => (cur === f ? "todas" : f));
   }
 
+  const ideasParaScope = useMemo(() => {
+    if (weekFilter === "acumulado") return ideas;
+    const w = Number(weekFilter);
+    return withWeek.filter((i) => i._week === w);
+  }, [weekFilter, ideas, withWeek]);
+
+  const totalesPorColaborador = useMemo(() => {
+    const map = {};
+    ideasParaScope.forEach((i) => {
+      if (!i.colaborador) return;
+      if (!map[i.colaborador]) map[i.colaborador] = { total: 0, terminadas: 0, enProceso: 0 };
+      map[i.colaborador].total++;
+      if (i.status === "Terminado") map[i.colaborador].terminadas++;
+      else map[i.colaborador].enProceso++;
+    });
+    return Object.entries(map)
+      .map(([nombre, v]) => ({ nombre, ...v }))
+      .sort((a, b) => b.total - a.total);
+  }, [ideasParaScope]);
+
+  const scopeLabel = weekFilter === "acumulado" ? "acumulado" : (Number(weekFilter) === curWeek ? `semana actual · S${curWeek}` : `semana ${weekFilter}`);
+
+  const acumuladoPorColaborador = useMemo(() => {
+    const map = {};
+    ideas.forEach((i) => {
+      if (!i.colaborador) return;
+      map[i.colaborador] = (map[i.colaborador] || 0) + 1;
+    });
+    return Object.entries(map)
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [ideas]);
+
   return (
     <div>
-      <SectionTitle title="Panel colaborador" />
+      <SectionTitle title="Vista colaborador" />
 
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 22 }}>
         <div>
@@ -1097,6 +1137,7 @@ function ColaboradorView({ ideas, activeColaborador, setActiveColaborador, onUpd
             onChange={(e) => { setActiveColaborador(e.target.value); setFilter("todas"); }}
             style={{ ...selectStyle, maxWidth: 260, fontSize: 16, fontFamily: serif, fontWeight: 600 }}
           >
+            <option value={TODOS}>Todos</option>
             {nombres.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </div>
@@ -1113,19 +1154,75 @@ function ColaboradorView({ ideas, activeColaborador, setActiveColaborador, onUpd
         <KpiCard label="En bitácora" value={enBitacora} onClick={() => toggleFilter("bitacora")} active={filter === "bitacora"} />
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ marginBottom: 30 }}>
         {visibles.length === 0 && (
           <p style={{ color: C.inkSoft, fontSize: 14 }}>
-            {miasEnSemana.length === 0 ? `${activeColaborador} no tiene ideas registradas en este periodo.` : "No hay ideas en este filtro."}
+            {miasEnSemana.length === 0
+              ? (esTodos ? "No hay ideas registradas en este periodo." : `${activeColaborador} no tiene ideas registradas en este periodo.`)
+              : "No hay ideas en este filtro."}
           </p>
         )}
-        {visibles.map((it) => <IdeaRow key={it.id} idea={it} onUpdate={onUpdate} onDelete={onDelete} />)}
+        {visibles.length > 0 && esTodos && weekFilter === "acumulado" ? (
+          <div>
+            <button
+              type="button"
+              onClick={() => setVerLista((v) => !v)}
+              style={{
+                ...cardStyle, width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                cursor: "pointer", fontFamily: sans, fontSize: 14, fontWeight: 600, color: C.ink,
+              }}
+            >
+              {verLista ? "Ocultar ideas" : `Ver ${visibles.length} ideas`}
+              <ChevronDown size={16} style={{ color: C.inkSoft, transform: verLista ? "rotate(180deg)" : "none" }} />
+            </button>
+            {verLista && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
+                {visibles.map((it) => <IdeaRow key={it.id} idea={it} onUpdate={onUpdate} onDelete={onDelete} showColaborador={esTodos} />)}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {visibles.map((it) => <IdeaRow key={it.id} idea={it} onUpdate={onUpdate} onDelete={onDelete} showColaborador={esTodos} />)}
+          </div>
+        )}
       </div>
+
+      <SectionTitle title={`Totales por colaborador (${scopeLabel})`} small />
+      <div style={{ ...cardStyle, padding: 0, overflow: "hidden", marginBottom: 26 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
+          <thead>
+            <tr style={{ background: C.amberSoft }}>
+              {["Colaborador", "Total", "En proceso", "%", "Terminado", "%"].map((h) => (
+                <th key={h} style={thStyle}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {totalesPorColaborador.length === 0 && (
+              <tr><td style={tdStyle} colSpan={6}><span style={{ color: C.inkSoft }}>Sin ideas en este periodo.</span></td></tr>
+            )}
+            {totalesPorColaborador.map((row, idx) => (
+              <tr key={row.nombre} style={{ borderTop: idx === 0 ? "none" : `1px solid ${C.line}` }}>
+                <td style={tdStyle}><strong>{row.nombre}</strong></td>
+                <td style={tdStyle}>{row.total}</td>
+                <td style={tdStyle}>{row.enProceso}</td>
+                <td style={tdStyle}>{row.total ? pct(row.enProceso / row.total) : "—"}</td>
+                <td style={tdStyle}>{row.terminadas}</td>
+                <td style={tdStyle}>{row.total ? pct(row.terminadas / row.total) : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <SectionTitle title="Acumulado total por colaborador" small />
+      <BarChart data={acumuladoPorColaborador} color={C.amber} />
     </div>
   );
 }
 
-function IdeaRow({ idea, onUpdate, onDelete }) {
+function IdeaRow({ idea, onUpdate, onDelete, showColaborador }) {
   const [expanded, setExpanded] = useState(false);
   const isDone = idea.status === "Terminado";
 
@@ -1142,6 +1239,7 @@ function IdeaRow({ idea, onUpdate, onDelete }) {
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline", fontSize: 12, color: C.inkSoft, marginBottom: 3 }}>
+            {showColaborador && <strong style={{ color: C.ink }}>{idea.colaborador}</strong>}
             <span>S{weekNumber(idea.fechaInicio)}</span>
             <span>· {fmtDateHuman(idea.fechaInicio)}</span>
             <span>· {idea.proceso}</span>
